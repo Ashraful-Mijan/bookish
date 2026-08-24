@@ -1,0 +1,39 @@
+/**
+ * Heuristics for detecting legacy Bijoy (ANSI) encoded Bengali text.
+ *
+ * Bijoy encodes Bengali using the extended ANSI codepage, so genuine Bijoy
+ * text contains characters such as daggers, y-with-diaeresis, low double
+ * quotes, diaeresis, middle dot, acute accent and the yen/euro signs, and
+ * crucially does NOT contain any characters from the Unicode Bengali block
+ * (U+0980-U+09FF). Already-Unicode Bengali must never be re-converted, so the
+ * presence of the Bengali block forces a "not Bijoy" result.
+ */
+
+function buildRange(lo: number, hi: number): string {
+  let out = '';
+  for (let i = lo; i <= hi; i++) out += String.fromCharCode(i);
+  return out;
+}
+
+function buildFromCodes(codes: number[]): string {
+  return codes.map((c) => String.fromCharCode(c)).join('');
+}
+
+const UNICODE_BENGALI = new RegExp('[' + buildRange(0x0980, 0x09ff) + ']');
+const BIJOY_HINTS = new RegExp(
+  '[' + buildFromCodes([0x2020, 0x2021, 0x00ff, 0x201e, 0x00a8, 0x00b7, 0x00b4, 0x00a5, 0x20ac]) + ']',
+);
+
+export function containsUnicodeBengali(text: string): boolean {
+  return UNICODE_BENGALI.test(text);
+}
+
+export function containsBijoyHints(text: string): boolean {
+  return BIJOY_HINTS.test(text);
+}
+
+export function isLikelyBijoy(text: string): boolean {
+  if (!text) return false;
+  if (containsUnicodeBengali(text)) return false;
+  return containsBijoyHints(text);
+}
