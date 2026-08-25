@@ -57,7 +57,7 @@ export function SearchScreen() {
         renderItem={({ item }) => (
           <BookCard
             book={item}
-            onPress={() => navigation.navigate('BookDetails', { bookId: item.id })}
+            onPress={() => navigation.navigate('Reader', { bookId: item.id })}
           />
         )}
       />

@@ -74,8 +74,10 @@ export function ReaderScreen() {
     [book],
   );
 
+  const [readerError, setReaderError] = useState<string | null>(null);
   const onError = useCallback((message: string) => {
     console.warn('[Reader]', message);
+    setReaderError(message);
   }, []);
 
   const addBookmark = useCallback(
@@ -136,6 +138,9 @@ export function ReaderScreen() {
           </Text>
         </View>
         <Text style={styles.pct}>{Math.round(percent * 100)}%</Text>
+        <Pressable style={styles.iconBtn} onPress={() => navigation.navigate('BookDetails', { bookId: book.id })}>
+          <Text style={styles.iconTxt}>i</Text>
+        </Pressable>
       </View>
 
       {/* Reader */}
@@ -161,6 +166,16 @@ export function ReaderScreen() {
           />
         )}
       </View>
+
+      {readerError ? (
+        <View style={styles.errorOverlay}>
+          <Text style={styles.errorTitle}>Could not open book</Text>
+          <Text style={styles.errorMsg} numberOfLines={8}>{readerError}</Text>
+          <Pressable style={styles.closeBtn} onPress={() => setReaderError(null)}>
+            <Text style={styles.closeBtnTxt}>Dismiss</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {/* Bottom toolbar */}
       <View style={styles.bottomBar}>
@@ -458,4 +473,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   actionBtnTxt: { color: '#fff', fontWeight: '700' },
+  errorOverlay: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    top: 70,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#d9534f',
+    zIndex: 50,
+  },
+  errorTitle: { fontSize: 16, fontWeight: '700', color: '#d9534f', marginBottom: 6 },
+  errorMsg: { fontSize: 13, color: '#333', fontFamily: 'monospace' },
 });
