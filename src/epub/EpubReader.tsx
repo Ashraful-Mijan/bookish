@@ -42,13 +42,20 @@ export function EpubReader({
   const didInit = useRef(false);
   const settings = useSettings();
   const [loading, setLoading] = useState(true);
-  const [htmlUri, setHtmlUri] = useState<string | null>(null);
+  const [html, setHtml] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
-    readerHtml.downloadAsync().then(() => {
-      if (mounted) setHtmlUri(readerHtml.uri);
-    });
+    (async () => {
+      try {
+        await readerHtml.downloadAsync();
+        const uri = (readerHtml as any).localUri || readerHtml.uri;
+        const content = await FileSystem.readAsStringAsync(uri);
+        if (mounted) setHtml(content);
+      } catch (e) {
+        onError?.('Failed to load reader HTML: ' + (e as Error).message);
+      }
+    })();
     return () => {
       mounted = false;
     };
@@ -128,8 +135,10 @@ export function EpubReader({
       case 'ready':
         readyRef.current = true;
         setLoading(false);
+        onReady?.();
         break;
       case 'webReady':
+        injectInit();
         break;
       case 'error':
         onError?.(msg.message);
@@ -140,10 +149,10 @@ export function EpubReader({
   };
 
   useEffect(() => {
-    if (!loading && htmlUri) pushSettings();
-  }, [loading, htmlUri, pushSettings]);
+    if (!loading && html) pushSettings();
+  }, [loading, html, pushSettings]);
 
-  if (!htmlUri) {
+  if (!html) {
     return (
       <View style={styles.container}>
         <View style={styles.loading}>
@@ -157,7 +166,7 @@ export function EpubReader({
     <View style={styles.container}>
       <WebView
         ref={webRef}
-        source={{ uri: htmlUri }}
+        source={{ html }}
         originWhitelist={['*']}
         javaScriptEnabled
         domStorageEnabled
@@ -165,7 +174,7 @@ export function EpubReader({
         onMessage={onMessage}
         onLoadEnd={() => {
           // Kick off reading via injectJavaScript (reliable RN->Web channel).
-          setTimeout(() => injectInit(), 400);
+          setTimeout(() => injectInit(), 1000);
           // Safety: never leave the spinner spinning forever.
           setTimeout(() => setLoading(false), 9000);
         }}
