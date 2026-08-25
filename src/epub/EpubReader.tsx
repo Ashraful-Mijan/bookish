@@ -22,7 +22,6 @@ interface Props {
   onSelected?: (cfi: string, text: string) => void;
   onReady?: () => void;
   onError?: (message: string) => void;
-  /** Receives a function that navigates the rendition to a TOC href. */
   gotoHrefRef?: MutableRefObject<((href: string) => void) | null>;
 }
 
@@ -58,18 +57,25 @@ export function EpubReader({
   useEffect(() => {
     if (gotoHrefRef) {
       gotoHrefRef.current = (href: string) =>
-        webRef.current?.postMessage(JSON.stringify({ type: 'goto', href }));
+        webRef.current?.injectJavaScript(
+          'window.__boipoka.goto(' + JSON.stringify(href) + ');',
+        );
     }
     return () => {
       if (gotoHrefRef) gotoHrefRef.current = null;
     };
   }, [gotoHrefRef]);
 
-  const pushSettings = useCallback(() => {
-    if (!readyRef.current) return;
-    webRef.current?.postMessage(
-      JSON.stringify({
-        type: 'settings',
+  const injectInit = useCallback(async () => {
+    if (didInit.current) return;
+    try {
+      const base64 = await FileSystem.readAsStringAsync(book.filePath, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      didInit.current = true;
+      const payload = {
+        base64,
+        cfi: startCfi,
         settings: {
           fontFamily: settings.fontFamily,
           fontSize: settings.fontSize,
@@ -77,36 +83,29 @@ export function EpubReader({
           margin: settings.margin,
           theme: settings.theme,
         },
-      }),
-    );
-  }, [settings]);
-
-  const sendInit = useCallback(async () => {
-    if (didInit.current) return;
-    try {
-      const base64 = await FileSystem.readAsStringAsync(book.filePath, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      readyRef.current = true;
-      webRef.current?.postMessage(
-        JSON.stringify({
-          type: 'init',
-          base64,
-          cfi: startCfi,
-          settings: {
-            fontFamily: settings.fontFamily,
-            fontSize: settings.fontSize,
-            lineHeight: settings.lineHeight,
-            margin: settings.margin,
-            theme: settings.theme,
-          },
-        }),
+      };
+      webRef.current?.injectJavaScript(
+        'window.__boipoka.init(' + JSON.stringify(payload) + ');',
       );
-      setLoading(false);
     } catch (e) {
       onError?.((e as Error).message);
     }
   }, [book, startCfi, settings, onError]);
+
+  const pushSettings = useCallback(() => {
+    if (!readyRef.current) return;
+    webRef.current?.injectJavaScript(
+      'window.__boipoka.applySettings(' +
+        JSON.stringify({
+          fontFamily: settings.fontFamily,
+          fontSize: settings.fontSize,
+          lineHeight: settings.lineHeight,
+          margin: settings.margin,
+          theme: settings.theme,
+        }) +
+        ');',
+    );
+  }, [settings]);
 
   const onMessage = (event: { nativeEvent: { data: string } }) => {
     let msg: any;
@@ -117,9 +116,6 @@ export function EpubReader({
     }
     if (!msg || !msg.type) return;
     switch (msg.type) {
-      case 'boot':
-        sendInit();
-        break;
       case 'progress':
         onProgress?.(msg.cfi, msg.percent ?? 0);
         break;
@@ -130,7 +126,10 @@ export function EpubReader({
         onSelected?.(msg.cfi, msg.text ?? '');
         break;
       case 'ready':
-        onReady?.();
+        readyRef.current = true;
+        setLoading(false);
+        break;
+      case 'webReady':
         break;
       case 'error':
         onError?.(msg.message);
@@ -164,11 +163,13 @@ export function EpubReader({
         domStorageEnabled
         allowFileAccess
         onMessage={onMessage}
-        onError={(e) => onError?.(e.nativeEvent.description)}
         onLoadEnd={() => {
-          // Fallback: fire init even if the web 'boot' event is missed.
-          setTimeout(() => sendInit(), 400);
+          // Kick off reading via injectJavaScript (reliable RN->Web channel).
+          setTimeout(() => injectInit(), 400);
+          // Safety: never leave the spinner spinning forever.
+          setTimeout(() => setLoading(false), 9000);
         }}
+        onError={(e) => onError?.(e.nativeEvent.description)}
         style={styles.webview}
       />
       {loading ? (
