@@ -83,6 +83,10 @@
   }
 
   function init(payload) {
+    if (typeof ePub === 'undefined') {
+      post({ type: 'error', message: 'epub.js engine not loaded (ePub undefined)' });
+      return;
+    }
     try {
       var bytes = base64ToUint8Array(payload.base64);
       book = ePub(bytes);
@@ -159,6 +163,9 @@
     switch (data.type) {
       case 'init':
         init(data);
+        break;
+      case 'requestInit':
+        post({ type: 'boot' });
         break;
       case 'settings':
         if (rendition) applySettings(data.settings);

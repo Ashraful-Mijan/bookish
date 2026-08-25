@@ -40,6 +40,7 @@ export function EpubReader({
 }: Props) {
   const webRef = useRef<WebView>(null);
   const readyRef = useRef(false);
+  const didInit = useRef(false);
   const settings = useSettings();
   const [loading, setLoading] = useState(true);
   const [htmlUri, setHtmlUri] = useState<string | null>(null);
@@ -81,6 +82,7 @@ export function EpubReader({
   }, [settings]);
 
   const sendInit = useCallback(async () => {
+    if (didInit.current) return;
     try {
       const base64 = await FileSystem.readAsStringAsync(book.filePath, {
         encoding: FileSystem.EncodingType.Base64,
@@ -163,6 +165,10 @@ export function EpubReader({
         allowFileAccess
         onMessage={onMessage}
         onError={(e) => onError?.(e.nativeEvent.description)}
+        onLoadEnd={() => {
+          // Fallback: fire init even if the web 'boot' event is missed.
+          setTimeout(() => sendInit(), 400);
+        }}
         style={styles.webview}
       />
       {loading ? (

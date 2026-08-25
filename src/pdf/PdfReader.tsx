@@ -20,6 +20,8 @@ export function PdfReader({ book, startPage = 1, onProgress, onError }: Props) {
         onLoadComplete={(total) => onProgress?.(startPage, total)}
         onError={(err) => onError?.(String(err))}
         style={styles.pdf}
+        enablePaging={false}
+        fitPolicy={0}
         trustAllCerts={false}
       />
     </View>
@@ -28,5 +30,5 @@ export function PdfReader({ book, startPage = 1, onProgress, onError }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#525252' },
-  pdf: { flex: 1, width: '100%', height: '100%' },
+  pdf: { flex: 1, width: '100%' },
 });
