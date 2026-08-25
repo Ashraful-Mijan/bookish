@@ -1,20 +1,36 @@
-/* Generates assets/web/reader.html.
- * epub.js is loaded from the jsDelivr CDN (reliable UMD global `ePub`),
- * and the reader bootstrap is inlined. This avoids bundling/UMD quirks of
- * an inlined copy and keeps the engine load deterministic. Network is
- * already required for Google Fonts in this app.
- * Run via `postinstall`. */
+/* Generates assets/web/reader.html by inlining epub.js (from node_modules)
+ * and the reader bootstrap. Local vendoring means the EPUB engine works
+ * offline. Run via `postinstall`. */
 const fs = require('fs');
 const path = require('path');
 
 const root = process.cwd();
+const nodeModules = path.join(root, 'node_modules');
 const outDir = path.join(root, 'assets', 'web');
+
+function findEpubJs() {
+  const candidates = [
+    'epubjs/dist/epub.js',
+    'epubjs/dist/epub.min.js',
+    'epubjs/dist/epub.esm.js',
+  ];
+  for (const c of candidates) {
+    const p = path.join(nodeModules, c);
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
 
 function main() {
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
-  const bootstrapPath = path.join(outDir, 'reader.bootstrap.js');
-  const bootstrapSrc = fs.readFileSync(bootstrapPath, 'utf8');
+  const epubPath = findEpubJs();
+  if (!epubPath) {
+    console.warn('[copy-web-deps] epubjs not found; reader.html not generated.');
+    return;
+  }
+  const epubSrc = fs.readFileSync(epubPath, 'utf8');
+  const bootstrapSrc = fs.readFileSync(path.join(outDir, 'reader.bootstrap.js'), 'utf8');
 
   const googleFonts =
     'Noto+Sans+Bengali&family=Hind+Siliguri&family=Tiro+Bangla&family=Mukta&family=Galada';
@@ -36,13 +52,13 @@ function main() {
 </head>
 <body>
 <div id="viewer"></div>
-<script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.js"></script>
+<script>${epubSrc}</script>
 <script>${bootstrapSrc}</script>
 </body>
 </html>`;
 
   fs.writeFileSync(path.join(outDir, 'reader.html'), html, 'utf8');
-  console.log('[copy-web-deps] wrote assets/web/reader.html (CDN epub.js)');
+  console.log('[copy-web-deps] wrote assets/web/reader.html (vendored epub.js)');
 }
 
 main();

@@ -1,13 +1,6 @@
-/* Reader bootstrap (runs inside the React Native WebView, browser context).
- * Communicates with React Native via postMessage(JSON).
- * RN -> WebView messages: { type, ... }
- *   init      { base64, cfi, settings }
- *   settings  { settings }
- *   action    { action: 'next' | 'prev' | 'toc' }
- *   goto      { cfi }
- * WebView -> RN messages:
- *   ready | progress | toc | selected | error
- */
+/* Reader bootstrap (browser context).
+ * Web -> RN: window.ReactNativeWebView.postMessage(JSON.stringify(msg))
+ * RN -> Web: window.__boipoka.init / applySettings / goto (injected via injectJavaScript) */
 (function () {
   var book = null;
   var rendition = null;
@@ -23,9 +16,7 @@
       if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
         window.ReactNativeWebView.postMessage(JSON.stringify(msg));
       }
-    } catch (e) {
-      // ignore
-    }
+    } catch (e) {}
   }
 
   function base64ToUint8Array(b64) {
@@ -42,7 +33,7 @@
   }
 
   function applySettings(s) {
-    if (!rendition || !s) return;
+    if (!rendition) { pendingSettings = s; return; }
     var theme = THEMES[s.theme] || THEMES.light;
     var css = {
       body: {
@@ -53,11 +44,11 @@
         'line-height': String(s.lineHeight),
         padding: marginPx(s.margin) + 'px',
         'word-break': 'break-word',
-        margin: '0',
+        margin: '0'
       },
       p: { 'text-align': 'justify', margin: '0 0 1em 0' },
       a: { color: 'inherit' },
-      img: { 'max-width': '100%' },
+      img: { 'max-width': '100%' }
     };
     try {
       rendition.themes.register('applied', css);
@@ -71,23 +62,18 @@
   function buildToc(nav) {
     function walk(items) {
       return (items || []).map(function (it) {
-        return {
-          id: it.id,
-          label: (it.label || '').trim(),
-          href: it.href,
-          subitems: walk(it.subitems),
-        };
+        return { id: it.id, label: (it.label || '').trim(), href: it.href, subitems: walk(it.subitems) };
       });
     }
     return walk(nav.toc);
   }
 
   function init(payload) {
-    if (typeof ePub === 'undefined') {
-      post({ type: 'error', message: 'epub.js engine not loaded (ePub undefined)' });
-      return;
-    }
     try {
+      if (typeof ePub === 'undefined') {
+        post({ type: 'error', message: 'epub.js engine not loaded (ePub undefined). Check network/CDN access.' });
+        return;
+      }
       var bytes = base64ToUint8Array(payload.base64);
       book = ePub(bytes);
       rendition = book.renderTo('viewer', {
@@ -95,7 +81,7 @@
         height: '100%',
         spread: 'none',
         flow: 'paginated',
-        allowScriptedContent: true,
+        allowScriptedContent: true
       });
 
       rendition.on('relocated', function (location) {
@@ -104,94 +90,43 @@
           if (location && location.start && typeof location.start.percentage === 'number') {
             percent = location.start.percentage;
           } else if (book.locations && book.locations.total) {
-            percent = (book.locations.percentageFromCfi(location.start.cfi) || 0);
+            percent = book.locations.percentageFromCfi(location.start.cfi) || 0;
           }
         } catch (e) {}
-        post({
-          type: 'progress',
-          cfi: location.start.cfi,
-          percent: percent,
-          href: location.start.href,
-        });
+        post({ type: 'progress', cfi: location.start.cfi, percent: percent, href: location.start.href });
       });
 
       rendition.on('selected', function (cfiRange, contents) {
         var text = '';
-        try {
-          text = contents.window.getSelection().toString();
-        } catch (e) {}
+        try { text = contents.window.getSelection().toString(); } catch (e) {}
         post({ type: 'selected', cfi: cfiRange, text: text });
       });
 
-      rendition.on('rendered', function () {});
+      if (pendingSettings) { applySettings(pendingSettings); pendingSettings = null; }
+      else if (payload.settings) applySettings(payload.settings);
 
-      applySettings(payload.settings || pendingSettings);
-
-      book.ready
-        .then(function () {
-          return book.locations.generate(1000);
-        })
-        .catch(function () {})
-        .then(function () {
-          if (payload.cfi) {
-            rendition.display(payload.cfi);
-          } else {
-            rendition.display();
-          }
-          return book.loaded.navigation;
-        })
-        .then(function (nav) {
-          post({ type: 'toc', items: buildToc(nav) });
-          post({ type: 'ready' });
-        })
-        .catch(function (e) {
-          post({ type: 'error', message: 'book.ready: ' + (e && e.message) });
-        });
+      book.ready.then(function () {
+        return book.locations.generate(1000);
+      }).catch(function () {}).then(function () {
+        if (payload.cfi) rendition.display(payload.cfi);
+        else rendition.display();
+        return book.loaded.navigation;
+      }).then(function (nav) {
+        post({ type: 'toc', items: buildToc(nav) });
+        post({ type: 'ready' });
+      }).catch(function (e) {
+        post({ type: 'error', message: 'book.ready: ' + (e && e.message) });
+      });
     } catch (e) {
       post({ type: 'error', message: 'init: ' + e.message });
     }
   }
 
-  window.addEventListener('message', function (event) {
-    var data;
-    try {
-      data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-    } catch (e) {
-      return;
-    }
-    if (!data || !data.type) return;
-    switch (data.type) {
-      case 'init':
-        init(data);
-        break;
-      case 'requestInit':
-        post({ type: 'boot' });
-        break;
-      case 'settings':
-        if (rendition) applySettings(data.settings);
-        else pendingSettings = data.settings;
-        break;
-      case 'action':
-        if (data.action === 'next') rendition.next();
-        else if (data.action === 'prev') rendition.prev();
-        else if (data.action === 'toc') {
-          if (book && book.loaded && book.loaded.navigation) {
-            book.loaded.navigation.then(function (nav) {
-              post({ type: 'toc', items: buildToc(nav) });
-            });
-          }
-        }
-        break;
-      case 'goto':
-        if (!rendition) break;
-        if (data.cfi) rendition.display(data.cfi);
-        else if (data.href) rendition.display(data.href);
-        break;
-      default:
-        break;
-    }
-  });
+  window.__boipoka = {
+    init: init,
+    applySettings: applySettings,
+    goto: function (href) { if (rendition && href) rendition.display(href); }
+  };
 
-  // Signal the WebView is alive so RN can send init.
-  post({ type: 'boot' });
+  post({ type: 'webReady' });
 })();
