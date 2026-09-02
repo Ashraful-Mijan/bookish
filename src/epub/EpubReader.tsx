@@ -127,13 +127,78 @@ async function loadChapterText(zip: JSZip, href: string): Promise<string> {
   const f = zip.file(href);
   if (!f) return '';
   const buf = await f.async('uint8array');
-  const text = new TextDecoder('utf-8').decode(buf);
-  // Strip out <script>/<style> to avoid JS execution or CSS conflicts,
-  // keep the prose HTML.
-  return text
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .trim();
+  let text = new TextDecoder('utf-8').decode(buf);
+
+  // Strip scripts/styles to avoid JS execution or CSS conflicts.
+  text = text.replace(/<script[\s\S]*?<\/script>/gi, '');
+  text = text.replace(/<style[\s\S]*?<\/style>/gi, '');
+
+  // If this is a full XHTML document, extract only the <body> contents
+  // so innerHTML injection works correctly in the WebView.
+  const bodyMatch = text.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  if (bodyMatch) {
+    text = bodyMatch[1].trim();
+  }
+
+  // Inline simple <img src="..."> references from the EPUB zip so images
+  // render without a web server. Only inlines small images (<200KB).
+  text = await inlineImages(zip, href, text);
+
+  return text;
+}
+
+async function inlineImages(zip: JSZip, baseHref: string, text: string): Promise<string> {
+  const imgRe = /<img([^>]*?)src=["']([^"']+)["']([^>]*)>/gi;
+  const matches: Array<{ m: string; pre: string; src: string; post: string }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = imgRe.exec(text)) !== null) {
+    matches.push({ m: m[0], pre: m[1], src: m[2], post: m[3] });
+  }
+  for (const item of matches) {
+    const dataUrl = await inlineImg(zip, baseHref, item.src);
+    text = text.replace(item.m, '<img' + item.pre + 'src="' + dataUrl + '"' + item.post + '>');
+  }
+  return text;
+}
+  try {
+    let imgPath = src.trim();
+    if (!imgPath) return src;
+    if (imgPath.startsWith('data:')) return imgPath;
+    if (imgPath.startsWith('http://') || imgPath.startsWith('https://')) return src;
+    // Resolve relative to chapter file.
+    const base = baseHref.includes('/') ? baseHref.slice(0, baseHref.lastIndexOf('/') + 1) : '';
+    let resolved = imgPath;
+    if (imgPath.startsWith('/')) resolved = imgPath.slice(1);
+    else {
+      const parts = base.split('/');
+      parts.pop();
+      for (const seg of imgPath.split('/')) {
+        if (!seg || seg === '.') continue;
+        if (seg === '..') parts.pop();
+        else parts.push(seg);
+      }
+      resolved = parts.join('/');
+    }
+    const imgFile = zip.file(resolved);
+    if (!imgFile) return src;
+    const bytes = await imgFile.async('uint8array');
+    if (bytes.length > 200 * 1024) return src; // skip huge images
+    const ext = resolved.split('.').pop()?.toLowerCase() || 'png';
+    const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
+      : ext === 'gif' ? 'image/gif'
+      : ext === 'svg' ? 'image/svg+xml'
+      : ext === 'webp' ? 'image/webp'
+      : 'image/png';
+    const u8 = new Uint8Array(bytes);
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < u8.length; i += chunk) {
+      binary += String.fromCharCode.apply(null, Array.from(u8.subarray(i, i + chunk)) as unknown as number[]);
+    }
+    return 'data:' + mime + ';base64,' + btoa(binary);
+  } catch (e) {
+    return src;
+  }
 }
 
 export function EpubReader({
