@@ -4,6 +4,7 @@ import type { MutableRefObject } from 'react';
 import { WebView } from 'react-native-webview';
 import * as FileSystem from 'expo-file-system';
 import { Asset } from 'expo-asset';
+import JSZip from 'jszip';
 import { useSettings } from '../store/settingsStore';
 import type { Book } from '../db/types';
 
@@ -23,9 +24,101 @@ interface Props {
   onReady?: () => void;
   onError?: (message: string) => void;
   gotoHrefRef?: MutableRefObject<((href: string) => void) | null>;
+  webViewRef?: MutableRefObject<WebView | null>;
 }
 
 const readerHtml = Asset.fromModule(require('../../assets/web/reader.html'));
+
+async function resolveOpfPath(zip: JSZip): Promise<string> {
+  const container = zip.file('META-INF/container.xml');
+  if (container) {
+    const txt = await container.async('string');
+    const m = txt.match(/full-path="([^"]+)"/i) || txt.match(/full-path='([^']+)'/i);
+    if (m) return m[1];
+  }
+  const found = Object.keys(zip.files).find((n) => /\.opf$/i.test(n));
+  return found || 'OEBPS/content.opf';
+}
+
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_m, d) => String.fromCharCode(parseInt(d, 10)));
+}
+
+function resolveRelative(basePath: string, href: string): string {
+  if (href.startsWith('/')) return href.slice(1);
+  const parts = basePath.split('/');
+  parts.pop();
+  for (const seg of href.split('/')) {
+    if (!seg || seg === '.') continue;
+    if (seg === '..') parts.pop();
+    else parts.push(seg);
+  }
+  return parts.join('/');
+}
+
+function stripTags(html: string): string {
+  return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+async function extractSpine(
+  zip: JSZip,
+  opfPath: string,
+): Promise<Array<{ href: string; title?: string }>> {
+  const opfFile = zip.file(opfPath);
+  const opf = opfFile ? await opfFile.async('string') : '';
+  const base = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : '';
+
+  const manifest: Record<string, string> = {};
+  const manifestRe = /<item[^>]+id="([^"]+)"[^>]+href="([^"]+)"[^>]*>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = manifestRe.exec(opf)) !== null) {
+    manifest[m[1]] = resolveRelative(base, m[2]);
+  }
+
+  const spine: Array<{ idref: string }> = [];
+  const spineRe = /<itemref[^>]+idref="([^"]+)"[^>]*>/gi;
+  while ((m = spineRe.exec(opf)) !== null) {
+    spine.push({ idref: m[1] });
+  }
+
+  const titleRe = /<dc:title[^>]*>([\s\S]*?)<\/dc:title>/i;
+  const tm = opf.match(titleRe);
+  const bookTitle = tm ? decodeHtmlEntities(tm[1].trim()) : '';
+
+  const out: Array<{ href: string; title?: string }> = [];
+  for (const item of spine) {
+    const href = manifest[item.idref];
+    if (href && zip.file(href)) {
+      out.push({ href, title: bookTitle || undefined });
+    }
+  }
+  if (out.length === 0) {
+    const all = Object.keys(zip.files)
+      .filter((n) => !zip.files[n].dir && /\.(x?html?|htm)$/i.test(n))
+      .sort();
+    for (const href of all) out.push({ href, title: bookTitle || undefined });
+  }
+  return out;
+}
+
+async function loadChapterText(zip: JSZip, href: string): Promise<string> {
+  const f = zip.file(href);
+  if (!f) return '';
+  const buf = await f.async('uint8array');
+  const text = new TextDecoder('utf-8').decode(buf);
+  // Strip out <script>/<style> to avoid JS execution or CSS conflicts,
+  // keep the prose HTML.
+  return text
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .trim();
+}
 
 export function EpubReader({
   book,
@@ -36,13 +129,18 @@ export function EpubReader({
   onReady,
   onError,
   gotoHrefRef,
+  prevRef,
+  nextRef,
 }: Props) {
   const webRef = useRef<WebView>(null);
   const readyRef = useRef(false);
+
   const didInit = useRef(false);
   const settings = useSettings();
   const [loading, setLoading] = useState(true);
   const [html, setHtml] = useState<string | null>(null);
+  const [chapters, setChapters] = useState<string[]>([]);
+  const [currentChapter, setCurrentChapter] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -63,26 +161,55 @@ export function EpubReader({
 
   useEffect(() => {
     if (gotoHrefRef) {
-      gotoHrefRef.current = (href: string) =>
-        webRef.current?.injectJavaScript(
-          'window.__boipoka.goto(' + JSON.stringify(href) + ');',
-        );
+      gotoHrefRef.current = (href: string) => {
+        const idx = chapters.findIndex((c) => c === href);
+        if (idx >= 0) {
+          setCurrentChapter(idx);
+          webRef.current?.injectJavaScript(
+            'window.__boipoka.gotoChapter(' + idx + ');',
+          );
+        }
+      };
     }
     return () => {
       if (gotoHrefRef) gotoHrefRef.current = null;
     };
-  }, [gotoHrefRef]);
+  }, [gotoHrefRef, chapters]);
 
   const injectInit = useCallback(async () => {
     if (didInit.current) return;
     try {
-      const base64 = await FileSystem.readAsStringAsync(book.filePath, {
+      const fileB64 = await FileSystem.readAsStringAsync(book.filePath, {
         encoding: FileSystem.EncodingType.Base64,
       });
+      const zip = await JSZip.loadAsync(
+        new Uint8Array(
+          Array.from(atob(fileB64), (c) => c.charCodeAt(0)),
+        ),
+      );
+      const opfPath = await resolveOpfPath(zip);
+      const spine = await extractSpine(zip, opfPath);
+
+      const chapterTexts: string[] = [];
+      const toc: TocItem[] = [];
+      for (let i = 0; i < spine.length; i++) {
+        const text = await loadChapterText(zip, spine[i].href);
+        const title =
+          (spine[i].title || '').trim() ||
+          stripTags(text).slice(0, 60) ||
+          ('Chapter ' + (i + 1));
+        chapterTexts.push(text);
+        toc.push({ id: 'ch_' + i, label: title, href: spine[i].href });
+      }
+
       didInit.current = true;
+      setChapters(chapterTexts);
+      onToc?.(toc);
+
       const payload = {
-        base64,
-        cfi: startCfi,
+        chapters: chapterTexts,
+        hrefs: spine.map(function(x){ return x.href; }),
+        start: 0,
         settings: {
           fontFamily: settings.fontFamily,
           fontSize: settings.fontSize,
@@ -97,7 +224,7 @@ export function EpubReader({
     } catch (e) {
       onError?.((e as Error).message);
     }
-  }, [book, startCfi, settings, onError]);
+  }, [book, settings, onError, onToc]);
 
   const pushSettings = useCallback(() => {
     if (!readyRef.current) return;
@@ -123,18 +250,10 @@ export function EpubReader({
     }
     if (!msg || !msg.type) return;
     switch (msg.type) {
-      case 'progress':
-        onProgress?.(msg.cfi, msg.percent ?? 0);
-        break;
-      case 'toc':
-        onToc?.(msg.items ?? []);
-        break;
-      case 'selected':
-        onSelected?.(msg.cfi, msg.text ?? '');
-        break;
       case 'ready':
         readyRef.current = true;
         setLoading(false);
+        if (msg.chapter && msg.total) onProgress?.(String(msg.chapter - 1), msg.total);
         onReady?.();
         break;
       case 'webReady':
@@ -142,6 +261,7 @@ export function EpubReader({
         break;
       case 'error':
         onError?.(msg.message);
+        setLoading(false);
         break;
       default:
         break;
@@ -173,9 +293,7 @@ export function EpubReader({
         allowFileAccess
         onMessage={onMessage}
         onLoadEnd={() => {
-          // Kick off reading via injectJavaScript (reliable RN->Web channel).
           setTimeout(() => injectInit(), 1000);
-          // Safety: never leave the spinner spinning forever.
           setTimeout(() => setLoading(false), 9000);
         }}
         onError={(e) => onError?.(e.nativeEvent.description)}

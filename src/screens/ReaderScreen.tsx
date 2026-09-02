@@ -39,6 +39,8 @@ export function ReaderScreen() {
   const [percent, setPercent] = useState(0);
   const [currentCfi, setCurrentCfi] = useState<string | null>(null);
   const [toc, setToc] = useState<TocItem[]>([]);
+  const [chapterCount, setChapterCount] = useState(0);
+  const [currentChapter, setCurrentChapter] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [showToc, setShowToc] = useState(false);
   const [pending, setPending] = useState<{ cfi: string; text: string } | null>(null);
@@ -48,6 +50,8 @@ export function ReaderScreen() {
   const settings = useSettings();
   const progressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gotoRef = useRef<((href: string) => void) | null>(null);
+  const prevRef = useRef<(() => void) | null>(null);
+  const nextRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -62,10 +66,11 @@ export function ReaderScreen() {
   }, [bookId]);
 
   const saveProgress = useCallback(
-    (cfi: string | null, pct: number) => {
+    (chapterIndex: number, totalChapters: number) => {
+      const pct = totalChapters > 0 ? chapterIndex / totalChapters : 0;
       setPercent(pct);
-      setCurrentCfi(cfi);
-      if (!book) return;
+      setCurrentChapter(chapterIndex);
+      const cfi = String(chapterIndex);
       if (progressTimer.current) clearTimeout(progressTimer.current);
       progressTimer.current = setTimeout(() => {
         updateBookProgress(book.id, pct, cfi);
@@ -137,7 +142,7 @@ export function ReaderScreen() {
             {book.title}
           </Text>
         </View>
-        <Text style={styles.pct}>{Math.round(percent * 100)}%</Text>
+        <Text style={styles.pct}>{chapterCount > 0 ? (currentChapter + 1) + '/' + chapterCount : Math.round(percent * 100) + '%'}</Text>
         <Pressable style={styles.iconBtn} onPress={() => navigation.navigate('BookDetails', { bookId: book.id })}>
           <Text style={styles.iconTxt}>i</Text>
         </Pressable>
@@ -158,11 +163,13 @@ export function ReaderScreen() {
           <EpubReader
             book={book}
             startCfi={effectiveCfi}
-            onProgress={(cfi, p) => saveProgress(cfi, p)}
-            onToc={(items) => setToc(items)}
+            onProgress={(ch, total) => saveProgress(parseInt(ch, 10) || 0, total || 1)}
+            onToc={(items) => { setToc(items); if (items.length) setChapterCount(items.length); }}
             onSelected={(cfi, text) => setPending({ cfi, text })}
             onError={onError}
             gotoHrefRef={gotoRef}
+            prevRef={prevRef}
+            nextRef={nextRef}
           />
         )}
       </View>
@@ -180,8 +187,30 @@ export function ReaderScreen() {
       {/* Bottom toolbar */}
       <View style={styles.bottomBar}>
         {!isPdf ? (
+          <Pressable
+            style={styles.toolBtn}
+            onPress={() => {
+              prevRef.current?.();
+            }}>
+            <Text style={styles.toolTxt}>‹ Prev</Text>
+          </Pressable>
+        ) : (
+          <View style={styles.toolBtn} />
+        )}
+        {!isPdf ? (
           <Pressable style={styles.toolBtn} onPress={() => setShowToc(true)}>
             <Text style={styles.toolTxt}>Contents</Text>
+          </Pressable>
+        ) : (
+          <View style={styles.toolBtn} />
+        )}
+        {!isPdf ? (
+          <Pressable
+            style={styles.toolBtn}
+            onPress={() => {
+              nextRef.current?.();
+            }}>
+            <Text style={styles.toolTxt}>Next ›</Text>
           </Pressable>
         ) : (
           <View style={styles.toolBtn} />
