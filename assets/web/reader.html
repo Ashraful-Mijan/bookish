@@ -49,6 +49,12 @@
       chapters = payload.chapters || [];
       hrefs = payload.hrefs || [];
       if (payload.language) document.body.setAttribute('lang', payload.language);
+      // Ensure content is visible: reset margins/padding and set box-sizing
+      try {
+        var style = document.createElement('style');
+        style.textContent = '#viewer * { box-sizing: border-box; } #viewer p, #viewer div { margin: 0 0 1em 0; } #viewer img { max-width: 100%; height: auto; }';
+        document.head.appendChild(style);
+      } catch (e) {}
       renderChapter(payload.start || 0);
     } catch (e) {
       post({ type: 'error', message: 'init: ' + e.message });
