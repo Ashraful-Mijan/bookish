@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSettings } from '../store/settingsStore';
-import { READER_THEMES } from '../fonts/fonts';
+import { READER_FONTS, READER_THEMES, fontsByKind, defaultFontForKind } from '../fonts/fonts';
 import { useImportBook } from '../utils/useImport';
 import { AppColors } from '../theme';
 
