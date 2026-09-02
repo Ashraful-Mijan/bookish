@@ -394,7 +394,7 @@ export const EpubReader = React.forwardRef(function EpubReader({
       ) : null}
     </View>
   );
-}
+}); // end forwardRef
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#ffffff' },
@@ -406,4 +406,3 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
 });
-}); // end forwardRef
