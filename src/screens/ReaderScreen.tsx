@@ -80,6 +80,7 @@ export function ReaderScreen() {
   );
 
   const [readerError, setReaderError] = useState<string | null>(null);
+  const epubRef = useRef<any>(null);
   const onError = useCallback((message: string) => {
     console.warn('[Reader]', message);
     setReaderError(message);
@@ -161,6 +162,7 @@ export function ReaderScreen() {
           />
         ) : (
           <EpubReader
+            ref={epubRef}
             book={book}
             startCfi={effectiveCfi}
             onProgress={(ch, total) => saveProgress(parseInt(ch, 10) || 0, total || 1)}
@@ -178,9 +180,14 @@ export function ReaderScreen() {
         <View style={styles.errorOverlay}>
           <Text style={styles.errorTitle}>Could not open book</Text>
           <Text style={styles.errorMsg} numberOfLines={8}>{readerError}</Text>
-          <Pressable style={styles.closeBtn} onPress={() => setReaderError(null)}>
-            <Text style={styles.closeBtnTxt}>Dismiss</Text>
-          </Pressable>
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+            <Pressable style={[styles.closeBtn, { flex: 1 }]} onPress={() => { setReaderError(null); epubRef.current?.injectInit?.(); }}>
+              <Text style={styles.closeBtnTxt}>Retry</Text>
+            </Pressable>
+            <Pressable style={[styles.closeBtn, { flex: 1, backgroundColor: '#999' }]} onPress={() => setReaderError(null)}>
+              <Text style={styles.closeBtnTxt}>Dismiss</Text>
+            </Pressable>
+          </View>
         </View>
       ) : null}
 
