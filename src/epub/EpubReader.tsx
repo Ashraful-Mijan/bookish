@@ -160,6 +160,8 @@ async function inlineImages(zip: JSZip, baseHref: string, text: string): Promise
   }
   return text;
 }
+
+async function inlineImg(zip: JSZip, baseHref: string, src: string): Promise<string> {
   try {
     let imgPath = src.trim();
     if (!imgPath) return src;
