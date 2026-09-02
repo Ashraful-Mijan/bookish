@@ -8,6 +8,7 @@
   var current = 0;
   var chapters = [];
   var container = null;
+  try { container = document.getElementById('viewer'); } catch (e) {}
 
   function post(msg) {
     try {
