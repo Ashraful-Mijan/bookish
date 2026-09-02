@@ -6,6 +6,7 @@ import * as FileSystem from 'expo-file-system';
 import { Asset } from 'expo-asset';
 import JSZip from 'jszip';
 import { useSettings } from '../store/settingsStore';
+import { defaultFontForKind, fontsByKind } from '../fonts/fonts';
 import type { Book } from '../db/types';
 
 export interface TocItem {
@@ -28,6 +29,21 @@ interface Props {
 }
 
 const readerHtml = Asset.fromModule(require('../../assets/web/reader.html'));
+
+function detectLanguage(book: Book): 'bengali' | 'english' {
+  const lang = (book.language || '').toLowerCase();
+  if (lang.startsWith('bn') || lang.startsWith('ben')) return 'bengali';
+  return 'english';
+}
+
+function autoSelectFont(book: Book, settings: any): string {
+  const lang = detectLanguage(book);
+  const kind = lang;
+  const list = fontsByKind(kind);
+  const match = list.find((f) => f.family === settings.fontFamily);
+  if (match) return settings.fontFamily;
+  return defaultFontForKind(kind);
+}
 
 async function resolveOpfPath(zip: JSZip): Promise<string> {
   const container = zip.file('META-INF/container.xml');
@@ -206,11 +222,15 @@ export function EpubReader({
       setChapters(chapterTexts);
       onToc?.(toc);
 
+      const lang = detectLanguage(book);
       const payload = {
         chapters: chapterTexts,
         hrefs: spine.map(function(x){ return x.href; }),
         start: 0,
+        language: lang,
         settings: {
+          fontFamily: autoSelectFont(book, settings),
+
           fontFamily: settings.fontFamily,
           fontSize: settings.fontSize,
           lineHeight: settings.lineHeight,

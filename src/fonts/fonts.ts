@@ -1,30 +1,41 @@
-export interface BengaliFont {
+export interface ReaderFont {
   id: string;
   label: string;
   family: string;
-  /** Google Fonts family query, if the font is available on Google Fonts. */
   googleFont?: string;
+  kind: 'bengali' | 'english' | 'both';
 }
 
-/**
- * Reader font choices. The first entries are Unicode Bengali fonts served by
- * Google Fonts (loaded in the reader WebView) so the app works out of the
- * box. `SolaimanLipi` / `Kalpurush` are the classic Bengali Unicode fonts and
- * require dropping the .ttf files into `assets/fonts/` (see README) for
- * offline use; otherwise they fall back to Noto Sans Bengali.
- */
-export const BENGALI_FONTS: BengaliFont[] = [
-  { id: 'noto', label: 'Noto Sans Bengali', family: 'Noto Sans Bengali', googleFont: 'Noto+Sans+Bengali' },
-  { id: 'hind', label: 'Hind Siliguri', family: 'Hind Siliguri', googleFont: 'Hind+Siliguri' },
-  { id: 'tiro', label: 'Tiro Bangla', family: 'Tiro Bangla', googleFont: 'Tiro+Bangla' },
-  { id: 'mukta', label: 'Mukta', family: 'Mukta', googleFont: 'Mukta' },
-  { id: 'galada', label: 'Galada', family: 'Galada', googleFont: 'Galada' },
-  { id: 'solaiman', label: 'SolaimanLipi', family: 'SolaimanLipi' },
-  { id: 'kalpurush', label: 'Kalpurush', family: 'Kalpurush' },
+export const READER_FONTS: ReaderFont[] = [
+  { id: 'noto-bengali', label: 'Noto Sans Bengali', family: 'Noto Sans Bengali', googleFont: 'Noto+Sans+Bengali', kind: 'bengali' },
+  { id: 'hind', label: 'Hind Siliguri', family: 'Hind Siliguri', googleFont: 'Hind+Siliguri', kind: 'bengali' },
+  { id: 'tiro', label: 'Tiro Bangla', family: 'Tiro Bangla', googleFont: 'Tiro+Bangla', kind: 'bengali' },
+  { id: 'mukta', label: 'Mukta', family: 'Mukta', googleFont: 'Mukta', kind: 'bengali' },
+  { id: 'galada', label: 'Galada', family: 'Galada', googleFont: 'Galada', kind: 'bengali' },
+  { id: 'solaiman', label: 'SolaimanLipi', family: 'SolaimanLipi', kind: 'bengali' },
+  { id: 'kalpurush', label: 'Kalpurush', family: 'Kalpurush', kind: 'bengali' },
+
+  { id: 'noto-sans', label: 'Noto Sans', family: 'Noto Sans', googleFont: 'Noto+Sans', kind: 'english' },
+  { id: 'merriweather', label: 'Merriweather', family: 'Merriweather', googleFont: 'Merriweather', kind: 'english' },
+  { id: 'inter', label: 'Inter', family: 'Inter', googleFont: 'Inter', kind: 'english' },
+  { id: 'literata', label: 'Literata', family: 'Literata', googleFont: 'Literata', kind: 'english' },
+  { id: 'lora', label: 'Lora', family: 'Lora', googleFont: 'Lora', kind: 'english' },
+  { id: 'roboto', label: 'Roboto', family: 'Roboto', googleFont: 'Roboto', kind: 'english' },
+
+  { id: 'noto-serif', label: 'Noto Serif', family: 'Noto Serif', googleFont: 'Noto+Serif', kind: 'both' },
 ];
 
-export function fontByFamily(family: string): BengaliFont | null {
-  return BENGALI_FONTS.find((f) => f.family === family) ?? null;
+export function fontByFamily(family: string): ReaderFont | null {
+  return READER_FONTS.find((f) => f.family === family) ?? null;
+}
+
+export function fontsByKind(kind: ReaderFont['kind']): ReaderFont[] {
+  return READER_FONTS.filter((f) => f.kind === kind || f.kind === 'both');
+}
+
+export function defaultFontForKind(kind: ReaderFont['kind']): string {
+  const list = fontsByKind(kind);
+  return list[0]?.family ?? READER_FONTS[0].family;
 }
 
 export interface ReaderTheme {
@@ -40,7 +51,6 @@ export const READER_THEMES: ReaderTheme[] = [
   { id: 'dark', label: 'Dark', bg: '#1c1c1e', fg: '#d8d8d8' },
 ];
 
-/** Margin level (0..2) -> horizontal padding in px. */
 export function marginPx(level: number): number {
   return [12, 44, 76][Math.max(0, Math.min(2, level))];
 }

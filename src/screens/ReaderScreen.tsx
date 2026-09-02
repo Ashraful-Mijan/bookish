@@ -14,7 +14,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { EpubReader, TocItem } from '../epub/EpubReader';
 import { PdfReader } from '../pdf/PdfReader';
 import { useSettings } from '../store/settingsStore';
-import { BENGALI_FONTS, READER_THEMES, marginPx } from '../fonts/fonts';
+import { READER_FONTS, READER_THEMES, marginPx, fontsByKind, defaultFontForKind } from '../fonts/fonts';
 import {
   getBook,
   updateBookProgress,
@@ -236,7 +236,7 @@ export function ReaderScreen() {
 
             <Text style={styles.label}>Font</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.fontRow}>
-              {BENGALI_FONTS.map((f) => (
+              {READER_FONTS.map((f) => (
                 <Pressable
                   key={f.id}
                   style={[

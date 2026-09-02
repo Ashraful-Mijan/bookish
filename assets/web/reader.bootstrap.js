@@ -31,6 +31,7 @@
     try {
       chapters = payload.chapters || [];
       hrefs = payload.hrefs || [];
+      if (payload.language) document.body.setAttribute('lang', payload.language);
       renderChapter(payload.start || 0);
     } catch (e) {
       post({ type: 'error', message: 'init: ' + e.message });
@@ -64,7 +65,17 @@
     var fg = s.theme === 'dark' ? '#d8d8d8' : s.theme === 'sepia' ? '#5b4636' : '#1c1c1e';
     document.body.style.backgroundColor = theme;
     document.body.style.color = fg;
-    document.body.style.fontFamily = '"' + s.fontFamily + '", "Noto Sans Bengali", serif';
+    var stack = s.fontFamily || 'Noto Sans';
+    if (s.language === 'bengali' || s.language === 'bn') {
+      stack = stack + ', "Noto Sans Bengali", "Hind Siliguri", "Noto Sans", sans-serif';
+    } else {
+      stack = stack + ', "Noto Sans", "Georgia", serif';
+    }
+    if (s.language === 'bengali' || s.language === 'bn') {
+      document.body.style.fontFamily = '"' + stack + '", "Noto Sans Bengali", sans-serif';
+    } else {
+      document.body.style.fontFamily = '"' + stack + '", "Georgia", "Times New Roman", serif';
+    }
     document.body.style.fontSize = s.fontSize + 'px';
     document.body.style.lineHeight = String(s.lineHeight);
     document.body.style.padding = [12, 44, 76][s.margin || 1] + 'px';
