@@ -3,71 +3,21 @@
  * RN -> Web: window.__boipoka.init / applySettings / goto (injected via injectJavaScript)
  */
 (function () {
-  window.__boipokaError = function(msg) {
-    try {
-      var el = document.getElementById('viewer');
-      if (el) {
-        el.innerHTML = '<div style="padding:20px;font-family:sans-serif;color:#d9534f;"><h2>Reader error</h2><p>' + msg + '</p></div>';
-      }
-    } catch (e) {}
-  };
-
   var chapters = [];
   var hrefs = [];
   var current = 0;
   var container = null;
-  var state = 'booting'; // booting | ready | error
 
-  function post(msg) {
+  function safePost(msg) {
     try {
-      if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+      if (window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === 'function') {
         window.ReactNativeWebView.postMessage(JSON.stringify(msg));
       }
     } catch (e) {}
   }
 
-  function findContainer() {
-    try {
-      container = document.getElementById('viewer');
-    } catch (e) {
-      container = null;
-    }
-    return !!container;
-  }
-
-  function renderChapter(index) {
-    if (index < 0 || index >= chapters.length) return;
-    current = index;
-    var ch = chapters[index];
-    if (!container) {
-      findContainer();
-      if (!container) {
-        post({ type: 'error', message: 'viewer container missing' });
-        return;
-      }
-    }
-    try {
-      post({ type: 'debug', message: 'rendering chapter ' + (index + 1) + '/' + chapters.length });
-      container.innerHTML = '<article style="display:block;color:inherit;">' + ch + '</article>';
-      post({ type: 'ready', chapter: index + 1, total: chapters.length });
-      state = 'ready';
-    } catch (e) {
-      post({ type: 'error', message: 'render: ' + e.message });
-      state = 'error';
-    }
-  }
-
   function init(payload) {
     try {
-      post({ type: 'debug', message: 'init called with ' + (payload.chapters || []).length + ' chapters' });
-      // Show loading state
-      try {
-        var viewer = document.getElementById('viewer');
-        if (viewer) {
-          viewer.innerHTML = '<div style="padding:40px;text-align:center;font-family:sans-serif;color:#666;"><p>Loading book...</p></div>';
-        }
-      } catch (e) {}
-
       chapters = payload.chapters || [];
       hrefs = payload.hrefs || [];
       if (payload.language) {
@@ -75,13 +25,29 @@
       }
       try {
         var style = document.createElement('style');
-        style.textContent = '#viewer { display:block; width:100%; position:relative; } #viewer > * { display:block !important; visibility:visible !important; opacity:1 !important; position:static !important; } #viewer p, #viewer div, #viewer span { margin:0 0 1.1em 0; line-height:1.7; } #viewer img { max-width:100%; height:auto; display:block; } #viewer h1,#viewer h2,#viewer h3,#viewer h4 { margin:0.8em 0 0.4em; }';
+        style.textContent = '#viewer { display:block; width:100%; } #viewer > * { display:block !important; visibility:visible !important; opacity:1 !important; position:static !important; } #viewer p, #viewer div, #viewer span { margin:0 0 1.1em 0; line-height:1.7; } #viewer img { max-width:100%; height:auto; display:block; }';
         document.head.appendChild(style);
       } catch (e) {}
       renderChapter(payload.start || 0);
     } catch (e) {
-      post({ type: 'error', message: 'init: ' + e.message });
-      state = 'error';
+      safePost({ type: 'error', message: 'init: ' + e.message });
+    }
+  }
+
+  function renderChapter(index) {
+    if (index < 0 || index >= chapters.length) return;
+    current = index;
+    var ch = chapters[index];
+    try {
+      container = document.getElementById('viewer');
+      if (!container) {
+        safePost({ type: 'error', message: 'viewer container not found' });
+        return;
+      }
+      container.innerHTML = '<article style="display:block;color:inherit;">' + ch + '</article>';
+      safePost({ type: 'ready', chapter: index + 1, total: chapters.length });
+    } catch (e) {
+      safePost({ type: 'error', message: 'render: ' + e.message });
     }
   }
 
@@ -123,22 +89,6 @@
     document.body.style.wordBreak = 'break-word';
   }
 
-  // Self-healing: retry finding container if missing.
-  function retryFind() {
-    if (state === 'ready' || state === 'error') return;
-    if (!findContainer()) {
-      setTimeout(retryFind, 200);
-    } else {
-      post({ type: 'containerReady' });
-    }
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', retryFind);
-  } else {
-    retryFind();
-  }
-
   window.__boipoka = {
     init: init,
     next: next,
@@ -147,5 +97,5 @@
     applySettings: applySettings,
   };
 
-  post({ type: 'webReady' });
+  safePost({ type: 'webReady' });
 })();
