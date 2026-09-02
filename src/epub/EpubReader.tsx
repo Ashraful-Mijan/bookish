@@ -329,6 +329,19 @@ export const EpubReader = React.forwardRef(function EpubReader({
     );
   }, [settings]);
 
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    timeoutRef.current = setTimeout(() => {
+      if (!readyRef.current) {
+        onError?.('Reader did not respond within 10 seconds. Check network or try another book.');
+      }
+    }, 10000);
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, [book.id, onError]);
+
   const onMessage = (event: { nativeEvent: { data: string } }) => {
     let msg: any;
     try {
@@ -347,8 +360,12 @@ export const EpubReader = React.forwardRef(function EpubReader({
       case 'webReady':
         injectInit();
         break;
+      case 'debug':
+        console.log('[ReaderWeb]', msg.message);
+        break;
       case 'error':
-        onError?.(msg.message);
+        console.log('[ReaderWeb] ERROR:', msg.message);
+        onError?.('Reader error: ' + msg.message);
         setLoading(false);
         break;
       default:
@@ -373,19 +390,27 @@ export const EpubReader = React.forwardRef(function EpubReader({
   return (
     <View style={styles.container}>
       <WebView
+        key={book.id + (startCfi || '')}
         ref={webRef}
         source={{ html }}
         originWhitelist={['*']}
         javaScriptEnabled
         domStorageEnabled
         allowFileAccess
+        androidLayerType="hardware"
         onMessage={onMessage}
+        onLoadStart={() => console.log('[ReaderWeb] load start')}
         onLoadEnd={() => {
+          console.log('[ReaderWeb] load end');
           setTimeout(() => injectInit(), 1000);
           setTimeout(() => setLoading(false), 9000);
         }}
-        onError={(e) => onError?.(e.nativeEvent.description)}
+        onError={(e) => {
+          console.log('[ReaderWeb] ERROR:', e.nativeEvent.description);
+          onError?.(e.nativeEvent.description);
+        }}
         style={styles.webview}
+        backgroundColor="#ffffff"
       />
       {loading ? (
         <View style={styles.loading}>
