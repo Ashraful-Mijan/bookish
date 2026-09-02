@@ -25,6 +25,7 @@
   var current = 0;
   var chapters = [];
   var container = null;
+  try { container = document.getElementById('viewer'); } catch (e) {}
 
   function post(msg) {
     try {
@@ -42,9 +43,11 @@
     post({ type: 'ready', chapter: index + 1, total: chapters.length });
   }
 
+  var hrefs = [];
   function init(payload) {
     try {
       chapters = payload.chapters || [];
+      hrefs = payload.hrefs || [];
       renderChapter(payload.start || 0);
     } catch (e) {
       post({ type: 'error', message: 'init: ' + e.message });
@@ -59,7 +62,17 @@
     if (current > 0) renderChapter(current - 1);
   }
 
-  function gotoChapter(index) {
+  function gotoChapter(input) {
+    var index = -1;
+    if (typeof input === 'number') {
+      index = input;
+    } else if (typeof input === 'string' && hrefs.length) {
+      var found = hrefs.indexOf(input);
+      if (found < 0 && input.indexOf('#') >= 0) {
+        found = hrefs.indexOf(input.split('#')[0]);
+      }
+      if (found >= 0) index = found;
+    }
     if (index >= 0 && index < chapters.length) renderChapter(index);
   }
 
