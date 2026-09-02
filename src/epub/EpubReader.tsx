@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import type { MutableRefObject } from 'react';
 import { WebView } from 'react-native-webview';
@@ -201,7 +201,7 @@ async function inlineImages(zip: JSZip, baseHref: string, text: string): Promise
   }
 }
 
-export function EpubReader({
+export const EpubReader = React.forwardRef(function EpubReader({
   book,
   startCfi,
   onProgress,
@@ -212,7 +212,8 @@ export function EpubReader({
   gotoHrefRef,
   prevRef,
   nextRef,
-}: Props) {
+}: Props, ref: React.Ref<{ injectInit: () => void }>) {
+  useImperativeHandle(ref, () => ({ injectInit }));
   const webRef = useRef<WebView>(null);
   const readyRef = useRef(false);
 
@@ -403,3 +404,4 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
 });
+}); // end forwardRef

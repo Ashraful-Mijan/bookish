@@ -22,7 +22,7 @@
     if (!container || index < 0 || index >= chapters.length) return;
     current = index;
     var ch = chapters[index];
-    container.innerHTML = ch;
+    container.innerHTML = '<article style="display:block;color:inherit;">' + ch + '</article>';
     post({ type: 'ready', chapter: index + 1, total: chapters.length });
   }
 
@@ -32,10 +32,10 @@
       chapters = payload.chapters || [];
       hrefs = payload.hrefs || [];
       if (payload.language) document.body.setAttribute('lang', payload.language);
-      // Ensure content is visible: reset margins/padding and set box-sizing
+      // Force readable rendering regardless of EPUB CSS.
       try {
         var style = document.createElement('style');
-        style.textContent = '#viewer * { box-sizing: border-box; } #viewer p, #viewer div { margin: 0 0 1em 0; } #viewer img { max-width: 100%; height: auto; }';
+        style.textContent = '#viewer { display:block; width:100%; position:relative; } #viewer > * { display:block !important; visibility:visible !important; opacity:1 !important; position:static !important; } #viewer p, #viewer div, #viewer span { margin:0 0 1.1em 0; line-height:1.7; } #viewer img { max-width:100%; height:auto; display:block; } #viewer h1,#viewer h2,#viewer h3,#viewer h4 { margin:0.8em 0 0.4em; }';
         document.head.appendChild(style);
       } catch (e) {}
       renderChapter(payload.start || 0);
